@@ -1,48 +1,29 @@
 import { useRef, useCallback, useState } from 'react'
 import { CameraView } from 'expo-camera'
 import { Paths, File } from 'expo-file-system/next'
-import { useUploadQueue } from './useUploadQueue'
+import { useRollingBuffer } from './useRollingBuffer'
 import { CONFIG } from '../constants/config'
 
 type RecorderStatus = {
-  isRecording:    boolean
-  chunkCount:     number
-  uploadedCount:  number
-  queuedCount:    number
-  lastUploadTime: number | null
-  lastChunkUri:   string | null
+  isRecording:   boolean
+  chunkCount:    number   // total chunks recorded this session
+  bufferSize:    number   // current chunks in the rolling buffer
+  lastChunkUri:  string | null
 }
 
 export function useChunkRecorder(nationalId: string) {
-  const cameraRef     = useRef<CameraView>(null)
-  const isRunning     = useRef(false)
-  const chunkCount    = useRef(0)
+  const cameraRef  = useRef<CameraView>(null)
+  const isRunning  = useRef(false)
+  const chunkCount = useRef(0)
 
   const [status, setStatus] = useState<RecorderStatus>({
-    isRecording:    false,
-    chunkCount:     0,
-    uploadedCount:  0,
-    queuedCount:    0,
-    lastUploadTime: null,
-    lastChunkUri:   null,
+    isRecording:  false,
+    chunkCount:   0,
+    bufferSize:   0,
+    lastChunkUri: null,
   })
 
-  const { enqueue, queueLength } = useUploadQueue(
-    // On chunk uploaded successfully
-    (_item) => {
-      setStatus(prev => ({
-        ...prev,
-        uploadedCount:  prev.uploadedCount + 1,
-        queuedCount:    queueLength(),
-        lastUploadTime: Date.now(),
-      }))
-    },
-    // On chunk failed after max retries
-    (item) => {
-      console.warn('[SentinelCam] Chunk permanently failed:', item.startTime)
-      setStatus(prev => ({ ...prev, queuedCount: queueLength() }))
-    }
-  )
+  const { addChunk, getLatestChunk, getBufferSize, emptyBuffer } = useRollingBuffer()
 
   const recordNextChunk = useCallback(async () => {
     if (!isRunning.current || !cameraRef.current) return
@@ -55,8 +36,7 @@ export function useChunkRecorder(nationalId: string) {
         maxDuration: CONFIG.CHUNK_DURATION_MS / 1000,
       })
 
-      // Stop recording after CHUNK_DURATION_MS
-      // recordAsync resolves when stopRecording() is called or maxDuration hit
+      // Wait for CHUNK_DURATION_MS then stop
       await new Promise(resolve => setTimeout(resolve, CONFIG.CHUNK_DURATION_MS))
 
       if (cameraRef.current && isRunning.current) {
@@ -64,32 +44,25 @@ export function useChunkRecorder(nationalId: string) {
       }
 
       const recording = await recordingPromise
-      const endTime   = Date.now()
 
       if (recording && recording.uri) {
-        // Copy to a stable temp path before handing to queue
+        // Move to a stable cache path
         const stablePath = `${Paths.cache.uri}chunk_${startTime}.mp4`
         const sourceFile = new File(recording.uri)
         sourceFile.move(new File(stablePath))
 
         chunkCount.current++
-        
-        // Hand off to upload queue — do NOT await, start next recording immediately
-        enqueue({
-          localUri:   stablePath,
-          nationalId: nationalId,
-          startTime:  startTime,
-          endTime:    endTime,
-        })
 
-        setStatus(prev => ({
-          ...prev,
-          chunkCount: chunkCount.current,
-          queuedCount: queueLength(),
+        // Add to rolling buffer (handles eviction of oldest if full)
+        addChunk(stablePath)
+
+        setStatus({
+          isRecording:  true,
+          chunkCount:   chunkCount.current,
+          bufferSize:   getBufferSize(),
           lastChunkUri: stablePath,
-        }))
+        })
       }
-
     } catch (error) {
       console.error('[SentinelCam] Recording error:', error)
     }
@@ -98,7 +71,7 @@ export function useChunkRecorder(nationalId: string) {
     if (isRunning.current) {
       setTimeout(recordNextChunk, 50)
     }
-  }, [nationalId, enqueue, queueLength])
+  }, [addChunk, getBufferSize])
 
   const startRecording = useCallback(() => {
     if (isRunning.current) return
@@ -113,5 +86,21 @@ export function useChunkRecorder(nationalId: string) {
     setStatus(prev => ({ ...prev, isRecording: false }))
   }, [])
 
-  return { cameraRef, status, startRecording, stopRecording }
+  const clearBuffer = useCallback(() => {
+    emptyBuffer()
+    setStatus(prev => ({
+      ...prev,
+      bufferSize: 0,
+      lastChunkUri: null
+    }))
+  }, [emptyBuffer])
+
+  return {
+    cameraRef,
+    status,
+    startRecording,
+    stopRecording,
+    getLatestChunk,   // exposed so recording.tsx can pass it to usePushNotifications
+    clearBuffer,      // exposed to clear buffer after upload
+  }
 }

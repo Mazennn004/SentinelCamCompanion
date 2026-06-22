@@ -3,7 +3,7 @@
     "name": "Sentinel Cam",
     "slug": "sentinel-cam",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "landscape",
     "icon": "./assets/images/icon.png",
     "scheme": "stickersmash",
     "userInterfaceStyle": "automatic",
@@ -21,7 +21,10 @@
         "RECORD_AUDIO",
         "WRITE_EXTERNAL_STORAGE",
         "READ_EXTERNAL_STORAGE",
-        "INTERNET"
+        "INTERNET",
+        "POST_NOTIFICATIONS",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -38,6 +41,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#00B4C6",
+          "androidMode": "default"
+        }
+      ],
       [
         "expo-camera",
         {
@@ -61,6 +72,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3c634c2f-7e9a-4f4b-97a9-ac3effc42d34"
+      }
+    },
+    "owner": "mazen_04"
   }
 }

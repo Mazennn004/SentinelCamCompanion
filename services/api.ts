@@ -1,23 +1,85 @@
-import * as FileSystem from 'expo-file-system'
-import { CONFIG } from '../constants/config'
+import { CONFIG } from "./../constants/config";
+/**
+ * Sentinel Cam — API Service
+ *
+ * All functions are currently mocked.
+ * Replace the bodies with real fetch / FileSystem.uploadAsync calls once the backend is ready.
+ */
 
-type ChunkUploadPayload = {
-  localUri:   string
-  nationalId: string
-  startTime:  number
-  endTime:    number
+export interface ChunkUploadPayload {
+  localUri: string;
+  accessToken: string;
 }
 
 export async function uploadChunk(payload: ChunkUploadPayload): Promise<void> {
-  // Mock upload logic for now
-  console.log('[API] Mock uploading chunk to Cloudinary:', payload)
-  await new Promise(resolve => setTimeout(resolve, 1000))
+  const formData = new FormData();
+  formData.append("dashcamFootage", {
+    uri: payload.localUri,
+    type: "video/mp4",
+    name: `${Date.now()}.mp4`,
+  } as any);
+
+
+  const response = await fetch(
+    `${CONFIG.API_BASE_URL}/api/dashcam/upload-Footage`,
+    {
+      method: "POST",
+      headers: {
+        token: payload.accessToken,
+      },
+      body: formData,
+    },
+  );
+  const data = await response.json();
+  console.log("dashcam footage response", data);
+
+  return data;
 }
 
-export async function camLogin(nationalId: string): Promise<{ userId: string }> {
-  // Mock login logic
-  if (nationalId.length !== 14 || !/^\d+$/.test(nationalId)) {
-    throw new Error('Invalid NID')
-  }
-  return { userId: 'mock-user-id-123' }
+export async function camLogin(nationalId: string) {
+  const response = await fetch(
+    `${CONFIG.API_BASE_URL}/api/auth/dashcam/login`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ nationalId }),
+    },
+  );
+
+  const data = await response.json();
+
+  return data;
+}
+export async function updatePushNotificationKeyService(
+  expoPushToken: string,
+  accessToken: string,
+): Promise<void> {
+  const response = await fetch(`${CONFIG.API_BASE_URL}/api/dashcam/connect`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      token: accessToken,
+    },
+    body: JSON.stringify({ sentinelCamKey: expoPushToken }),
+  });
+
+  const data = await response.json();
+
+  return data;
+}
+export async function disconnect(accessToken: string) {
+  const response= await fetch(`${CONFIG.API_BASE_URL}/api/dashcam/disconnect`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      token: accessToken,
+    },
+  });
+  const data =await response.json();
+  console.log("disconnect response", data);
+
+  
+
 }
